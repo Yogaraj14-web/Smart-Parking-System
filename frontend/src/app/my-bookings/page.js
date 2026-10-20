@@ -1,27 +1,30 @@
 "use client";
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { io } from 'socket.io-client';
+import QRCode from 'react-qr-code';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function MyBookings() {
   const router = useRouter();
   const [bookings, setBookings] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [filteredBookings, setFilteredBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [filterDate, setFilterDate] = useState('');
 
-  // 1. Fetch user's bookings from backend
-  const fetchMyBookings = (userId) => {
-    setLoading(true);
+  // 1. Fetch Bookings
+  const fetchBookings = (userId) => {
     fetch(`http://127.0.0.1:5000/api/my-bookings/${userId}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success") {
           setBookings(data.data);
+          setFilteredBookings(data.data);
         }
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
+        console.error("Error fetching bookings:", err);
         setLoading(false);
       });
   };
@@ -29,186 +32,171 @@ export default function MyBookings() {
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
     if (!savedUser) {
-      alert("Please login to view your bookings.");
       router.push('/login');
       return;
     }
-    const user = JSON.parse(savedUser);
-    setCurrentUser(user);
-    fetchMyBookings(user.user_id);
-  }, [router]);
-  // 🔥 THE WEBSOCKET LISTENER (Live Magic)
-  useEffect(() => {
-    if (!currentUser) return;
+    const parsedUser = JSON.parse(savedUser);
+    setUser(parsedUser);
+    fetchBookings(parsedUser.user_id);
 
-    // Python server kooda live phone call connect pandrom
-    const socket = io('http://127.0.0.1:5000' , {transports: ['polling']});
-
-    // Server-la irundhu 'live_update' signal vandha enna pannanum?
-    socket.on('live_update', (data) => {
-      console.log("⚡ Live Update Received from Sensor:", data);
-      
-      // Signal vandha udane UI-a background-la refresh pandrom (Endha button-um amukkama!)
-      fetchMyBookings(currentUser.user_id);
-    });
-
-    // Component close aagumbodhu call-a cut pandrom
-    return () => {
-      socket.disconnect();
+    // Global Polling Event Listener
+    const handleRefresh = () => {
+      fetchBookings(parsedUser.user_id);
     };
-  }, [currentUser]);
+    window.addEventListener('refresh_parking_data', handleRefresh);
+    return () => window.removeEventListener('refresh_parking_data', handleRefresh);
+  }, [router]);
 
-  // 2. Extend Time Logic
-  const handleExtendTime = async (bookingId, slotName) => {
-    if (!window.confirm(`Add 30 extra minutes to ${slotName}?`)) return;
-
-    try {
-      const response = await fetch('http://127.0.0.1:5000/api/extend-time', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          booking_id: bookingId,
-          extra_mins: 30
-        })
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        alert("Success! Time extended by 30 mins.");
-        fetchMyBookings(currentUser.user_id);
-      } else {
-        alert(data.error || 'Failed to extend time.');
-      }
-    } catch (error) {
-      alert("Server error.");
+  // 2. Date Filter Logic
+  useEffect(() => {
+    if (filterDate) {
+      const filtered = bookings.filter(b => b.booking_date === filterDate);
+      setFilteredBookings(filtered);
+    } else {
+      setFilteredBookings(bookings);
     }
-  };
+  }, [filterDate, bookings]);
 
-  // 3. Dispute Logic (The "Taken" Button)
-  const handleSlotDispute = async (bookingId) => {
-    const isConfirmed = window.confirm("Are you sure someone else parked in your slot? We will assign you a new slot immediately.");
+  // 3. Clear History Logic
+  const clearHistory = async () => {
+    if (!confirm("Are you sure you want to clear old booking history? (Active & Parked slots won't be deleted)")) return;
     
-    if (!isConfirmed) return;
-
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/bookings/dispute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          booking_id: bookingId
-        }),
+      const res = await fetch(`http://127.0.0.1:5000/api/my-bookings/clear/${user.user_id}`, {
+        method: 'DELETE'
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        alert(`✅ Success! ${data.message}`);
-        fetchMyBookings(currentUser.user_id); // Auto-refresh to show the new slot!
-      } else {
-        alert(`❌ Error: ${data.message || data.error || 'Something went wrong. Please try again.'}`);
+      const data = await res.json();
+      if (data.status === 'success') {
+        fetchBookings(user.user_id);
       }
     } catch (error) {
-      console.error("Error reporting dispute:", error);
-      alert("Network error. Please check your backend.");
+      console.error("Error clearing history:", error);
     }
   };
+
+  // 4. Animation Variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+  };
+
+  if (loading) return <div className="min-h-screen bg-[#141311] flex justify-center items-center text-[#C19A6B] animate-pulse">Loading Bookings...</div>;
 
   return (
-    <div className="relative min-h-screen bg-[#141311] text-[#E8E5E1] font-sans selection:bg-[#C19A6B] selection:text-black overflow-hidden p-8">
-      
-      {/* Background */}
-      <div 
-        className="absolute inset-0 z-0 opacity-10 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1485291571150-772bcfc10da5?q=80&w=2000&auto=format&fit=crop')" }}
-      ></div>
-      <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#141311]/80 via-[#141311] to-[#141311]"></div>
-
-      <div className="relative z-10 max-w-5xl mx-auto">
+    <div className="min-h-screen bg-[#141311] text-[#E8E5E1] font-sans p-8 pt-24">
+      <div className="max-w-6xl mx-auto">
         
-        {/* Header Navigation */}
-        <header className="mb-12 flex justify-between items-end border-b border-[#2A2724] pb-6">
+        {/* Header Section */}
+        <motion.header 
+          initial={{ opacity: 0, y: -20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="flex flex-col md:flex-row justify-between items-center mb-12 border-b border-[#2A2724] pb-6"
+        >
           <div>
-            <p className="text-[#C19A6B] font-semibold tracking-[0.3em] text-xs mb-2 uppercase">
-              {currentUser?.name}'s History
-            </p>
             <h1 className="text-4xl font-light tracking-[0.1em] uppercase">
               My <span className="font-serif italic text-[#C19A6B]">Bookings</span>
             </h1>
+            <p className="text-[#8B8682] text-sm mt-2">Manage your VIP parking history</p>
           </div>
-          <button 
-            onClick={() => router.push('/')}
-            className="text-[10px] tracking-widest text-[#8B8682] hover:text-[#C19A6B] uppercase font-bold transition-colors border border-[#2A2724] px-4 py-2"
-          >
-            Back to Dashboard
-          </button>
-        </header>
-
-        {/* Bookings List */}
-        {loading ? (
-          <div className="text-[#C19A6B] animate-pulse tracking-widest text-sm text-center py-10">Fetching your VIP passes...</div>
-        ) : bookings.length === 0 ? (
-          <div className="bg-[#1E1C1A]/50 border border-[#2A2724] p-12 text-center">
-            <p className="tracking-widest uppercase text-sm text-[#8B8682] mb-4">No active bookings found</p>
-            <button onClick={() => router.push('/')} className="text-xs text-[#141311] bg-[#C19A6B] px-6 py-3 uppercase tracking-widest hover:bg-[#E2C096] transition-colors">
-              Book a Slot Now
+          
+          {/* Controls: Date Filter & Clear History */}
+          <div className="flex items-center gap-4 mt-6 md:mt-0">
+            <input 
+              type="date" 
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="bg-[#2A2724] text-[#E8E5E1] border border-[#C19A6B]/30 px-4 py-2 outline-none focus:border-[#C19A6B] transition-colors"
+            />
+            {filterDate && (
+              <button onClick={() => setFilterDate('')} className="text-xs text-[#9E6B6B] hover:text-red-400 uppercase tracking-widest">Clear Filter</button>
+            )}
+            <button 
+              onClick={clearHistory}
+              className="bg-transparent border border-red-500/50 text-red-400 px-4 py-2 hover:bg-red-500/10 transition-colors uppercase tracking-[0.1em] text-xs font-semibold"
+            >
+              Clear History
             </button>
           </div>
+        </motion.header>
+
+        {/* Bookings Grid */}
+        {filteredBookings.length === 0 ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center text-[#8B8682] py-20 border border-[#2A2724] bg-[#2A2724]/20">
+            No bookings found for the selected criteria.
+          </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {bookings.map((booking) => (
-              <div 
-                key={booking.booking_id}
-                className="bg-[#1E1C1A]/80 backdrop-blur-sm border border-[#2A2724] p-6 flex flex-col hover:border-[#C19A6B]/50 transition-all duration-300 group"
-              >
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <h3 className="text-3xl font-serif text-[#E8E5E1] group-hover:text-[#C19A6B] transition-colors">
-                      {booking.slot_name}
-                    </h3>
-                    <p className="text-[10px] tracking-widest text-[#8B8682] uppercase mt-2">
-                      Booking ID: #{booking.booking_id}
-                    </p>
-                  </div>
-                  <span className={`text-[10px] tracking-widest px-2 py-1 font-bold uppercase ${booking.booking_status === 'Active' ? 'bg-[#859E7A]/20 text-[#859E7A] border border-[#859E7A]/30' : 'bg-[#9E6B6B]/20 text-[#9E6B6B] border border-[#9E6B6B]/30'}`}>
-                    {booking.booking_status}
-                  </span>
-                </div>
+          <motion.div 
+            variants={containerVariants} 
+            initial="hidden" 
+            animate="show" 
+            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+          >
+            <AnimatePresence>
+              {filteredBookings.map((booking) => {
                 
-                <div className="flex justify-between items-end mt-auto pt-6 border-t border-[#2A2724]/50">
-                  <div>
-                    <p className="text-[10px] tracking-widest text-[#8B8682] uppercase">Extended Time</p>
-                    <p className="text-sm text-[#E8E5E1] font-mono mt-1">
-                      {booking.extended_time_mins || 0} Mins
-                    </p>
-                  </div>
-                  
-                  {/* Action Buttons Container */}
-                  {booking.booking_status === 'Active' && (
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleSlotDispute(booking.booking_id)}
-                        className="flex items-center gap-1 text-[10px] tracking-widest font-bold uppercase bg-[#9E6B6B]/10 text-[#9E6B6B] border border-[#9E6B6B]/30 px-3 py-2 hover:bg-[#9E6B6B] hover:text-[#141311] transition-colors"
-                        title="Report unauthorized parking"
-                      >
-                        <span>⚠️</span> Taken?
-                      </button>
+                // Status Color Logic
+                let statusColor = "text-[#8B8682]";
+                let borderColor = "border-[#2A2724]";
+                if (booking.booking_status === 'Active') { statusColor = "text-green-400"; borderColor = "border-green-500/30"; }
+                if (booking.booking_status === 'Parked') { statusColor = "text-blue-400"; borderColor = "border-blue-500/30"; }
+                if (booking.booking_status === 'Completed') { statusColor = "text-[#C19A6B]"; }
+                if (booking.booking_status === 'Expired') { statusColor = "text-red-400"; }
 
-                      <button 
-                        onClick={() => handleExtendTime(booking.booking_id, booking.slot_name)}
-                        className="text-[10px] tracking-widest font-bold uppercase bg-[#C19A6B]/10 text-[#C19A6B] border border-[#C19A6B]/30 px-4 py-2 hover:bg-[#C19A6B] hover:text-[#141311] transition-colors"
-                      >
-                        +30 Mins
-                      </button>
+                // QR Code Data (Vehicle Verification)
+                const qrData = JSON.stringify({
+                  id: booking.booking_id,
+                  vehicle: booking.vehicle_number,
+                  slot: booking.slot_name,
+                  status: booking.booking_status
+                });
+
+                return (
+                  <motion.div 
+                    key={booking.booking_id}
+                    variants={itemVariants}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    whileHover={{ scale: 1.02 }}
+                    className={`flex flex-col md:flex-row bg-[#1a1917] border ${borderColor} p-6 relative overflow-hidden group transition-all duration-300 hover:shadow-[0_0_20px_rgba(193,154,107,0.1)]`}
+                  >
+                    {/* Left: Info */}
+                    <div className="flex-1 pr-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-3xl font-serif text-[#E8E5E1]">{booking.slot_name}</h3>
+                        <span className={`text-xs font-bold tracking-widest uppercase px-2 py-1 bg-black/50 border ${borderColor} ${statusColor}`}>
+                          {booking.booking_status}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-1 mt-4">
+                        <p className="text-[#8B8682] text-sm"><span className="text-[#E8E5E1]">Date:</span> {booking.booking_date} | {booking.booking_time_formatted}</p>
+                        <p className="text-[#8B8682] text-sm"><span className="text-[#E8E5E1]">Vehicle:</span> {booking.vehicle_number}</p>
+                        {booking.extended_time_mins > 0 && (
+                          <p className="text-[#C19A6B] text-xs mt-2">+ {booking.extended_time_mins} mins extended</p>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
+                    {/* Right: QR Code */}
+                    <div className="mt-6 md:mt-0 md:pl-6 md:border-l border-[#2A2724] flex flex-col items-center justify-center">
+                      <div className="bg-white p-2 rounded-sm shadow-md">
+                        <QRCode value={qrData} size={90} level="H" />
+                      </div>
+                      <p className="text-[10px] text-[#8B8682] tracking-widest uppercase mt-3">Scan to Verify</p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </motion.div>
+        )}
       </div>
     </div>
   );
