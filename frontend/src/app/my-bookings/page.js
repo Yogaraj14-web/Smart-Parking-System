@@ -14,7 +14,7 @@ export default function MyBookings() {
 
   // 1. Fetch Bookings
   const fetchBookings = (userId) => {
-    fetch(`http://127.0.0.1:5000/api/my-bookings/${userId}`)
+    fetch(`https://smart-parking-backend-i15i.onrender.com/api/my-bookings/${userId}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success") {
@@ -62,7 +62,7 @@ export default function MyBookings() {
     if (!confirm("Are you sure you want to clear old booking history? (Active & Parked slots won't be deleted)")) return;
     
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/my-bookings/clear/${user.user_id}`, {
+      const res = await fetch(`https://smart-parking-backend-i15i.onrender.com/api/my-bookings/clear/${user.user_id}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -79,7 +79,7 @@ export default function MyBookings() {
     if (!confirm("Are you sure you want to cancel this booking?")) return;
 
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/cancel-booking', {
+      const res = await fetch('https://smart-parking-backend-i15i.onrender.com/api/cancel-booking', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slot_id, user_id: user.user_id })

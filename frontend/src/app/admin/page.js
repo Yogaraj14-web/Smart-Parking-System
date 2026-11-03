@@ -18,7 +18,7 @@ export default function AdminDashboard() {
 
   const fetchAdminData = () => {
     // 1. Fetch Unauthorized Alerts
-    fetch('http://127.0.0.1:5000/api/alerts/unauthorized')
+    fetch('https://smart-parking-backend-i15i.onrender.com/api/alerts/unauthorized')
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success") {
@@ -29,7 +29,7 @@ export default function AdminDashboard() {
       .catch((err) => console.error("Error fetching alerts:", err));
 
     // 2. Fetch All Bookings for History
-    fetch('http://127.0.0.1:5000/api/admin/bookings')
+    fetch('https://smart-parking-backend-i15i.onrender.com/api/admin/bookings')
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "success") {
@@ -86,7 +86,7 @@ export default function AdminDashboard() {
     if (!confirm("🚨 WARNING: Are you sure you want to WIPE all user booking history? (Active & Parked slots won't be deleted)")) return;
     
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/admin/bookings/clear`, { method: 'DELETE' });
+      const res = await fetch(`https://smart-parking-backend-i15i.onrender.com/api/admin/bookings/clear`, { method: 'DELETE' });
       const data = await res.json();
       if (data.status === 'success') {
         fetchAdminData();

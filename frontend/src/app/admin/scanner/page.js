@@ -38,7 +38,7 @@ export default function AdminScanner() {
       const qrData = JSON.parse(text);
       
       // Send to Backend API
-      const res = await fetch('http://127.0.0.1:5000/api/verify-qr', {
+      const res = await fetch('https://smart-parking-backend-i15i.onrender.com/api/verify-qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: qrData.id })

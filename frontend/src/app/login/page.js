@@ -42,7 +42,7 @@ export default function Login() {
     setIsError(false);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/login', {
+      const response = await fetch('https://smart-parking-backend-i15i.onrender.com/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -80,7 +80,7 @@ export default function Login() {
     setIsError(false);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/send-otp', {
+      const response = await fetch('https://smart-parking-backend-i15i.onrender.com/api/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
@@ -112,7 +112,7 @@ export default function Login() {
     setIsError(false);
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/verify-otp', {
+      const response = await fetch('https://smart-parking-backend-i15i.onrender.com/api/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otp })

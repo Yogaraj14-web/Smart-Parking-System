@@ -23,7 +23,7 @@ export default function Home() {
 
   const loadData = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/slots');
+      const res = await fetch('https://smart-parking-backend-i15i.onrender.com/api/slots');
       if (!res.ok) return; 
       const data = await res.json();
       if (data.status === "success") {
@@ -38,7 +38,7 @@ export default function Home() {
       const parsedUser = JSON.parse(savedUser);
       setUser(parsedUser);
       try {
-        const res = await fetch(`http://127.0.0.1:5000/api/my-bookings/${parsedUser.user_id}`);
+        const res = await fetch(`https://smart-parking-backend-i15i.onrender.com/api/my-bookings/${parsedUser.user_id}`);
         if (!res.ok) return;
 
         const data = await res.json();
@@ -55,7 +55,7 @@ export default function Home() {
   useEffect(() => {
     loadData();
     
-    const socket = io('http://127.0.0.1:5000', {
+    const socket = io('https://smart-parking-backend-i15i.onrender.com', {
       transports: ['websocket', 'polling']
     });
     
@@ -90,7 +90,7 @@ export default function Home() {
       setShowPhotoMenu(false); // Close menu
 
       try {
-        const res = await fetch('http://127.0.0.1:5000/api/update-profile-pic', {
+        const res = await fetch('https://smart-parking-backend-i15i.onrender.com/api/update-profile-pic', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: user.user_id, profile_pic: base64String })
@@ -120,7 +120,7 @@ export default function Home() {
     setShowPhotoMenu(false); // Close menu
 
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/update-profile-pic', {
+      const res = await fetch('https://smart-parking-backend-i15i.onrender.com/api/update-profile-pic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: user.user_id, profile_pic: defaultPic })
@@ -160,7 +160,7 @@ export default function Home() {
     setTimeout(async () => {
       try {
         if (paymentType === 'book') {
-          const response = await fetch('http://127.0.0.1:5000/api/book', {
+          const response = await fetch('https://smart-parking-backend-i15i.onrender.com/api/book', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: user.user_id, slot_id: selectedSlot.slot_id })

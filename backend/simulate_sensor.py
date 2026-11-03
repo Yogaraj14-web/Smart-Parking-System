@@ -10,6 +10,6 @@ data = {
 }
 
 print(f"📡 Sending IoT Signal for Slot {SLOT_ID}...")
-response = requests.post('http://127.0.0.1:5000/api/hardware/sensor', json=data)
+response = requests.post('https://smart-parking-backend-i15i.onrender.com/api/hardware/sensor', json=data)
 
 print("Server Response:", response.json())

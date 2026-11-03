@@ -44,7 +44,7 @@ export default function SignUp() {
     const finalProfilePic = profilePic || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png";
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/register', {
+      const response = await fetch('https://smart-parking-backend-i15i.onrender.com/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...formData, profile_pic: finalProfilePic }) 

@@ -6,7 +6,7 @@ import { io } from 'socket.io-client';
 export default function SocketListener() {
   useEffect(() => {
     // Python backend WebSocket-kulla connect pandrom
-    const socket = io('http://127.0.0.1:5000' ,  { transports : ['polling'] } );
+    const socket = io('https://smart-parking-backend-i15i.onrender.com' ,  { transports : ['polling'] } );
     
 
     socket.on('live_update', (data) => {
