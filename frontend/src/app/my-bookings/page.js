@@ -74,7 +74,30 @@ export default function MyBookings() {
     }
   };
 
-  // 4. Animation Variants
+  // 4. Cancel Booking Logic
+  const handleCancel = async (slot_id) => {
+    if (!confirm("Are you sure you want to cancel this booking?")) return;
+
+    try {
+      const res = await fetch('http://127.0.0.1:5000/api/cancel-booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slot_id, user_id: user.user_id })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.status === 'success') {
+        alert("Booking Cancelled!");
+        fetchBookings(user.user_id); // Refresh the list instantly
+      } else {
+        alert("Failed to cancel booking.");
+      }
+    } catch (err) {
+      console.error("Error cancelling booking:", err);
+    }
+  };
+
+  // 5. Animation Variants
   const containerVariants = {
     hidden: { opacity: 0 },
     show: {
@@ -149,6 +172,7 @@ export default function MyBookings() {
                 if (booking.booking_status === 'Parked') { statusColor = "text-blue-400"; borderColor = "border-blue-500/30"; }
                 if (booking.booking_status === 'Completed') { statusColor = "text-[#C19A6B]"; }
                 if (booking.booking_status === 'Expired') { statusColor = "text-red-400"; }
+                if (booking.booking_status === 'Cancelled') { statusColor = "text-red-500"; borderColor = "border-red-500/30"; }
 
                 // QR Code Data (Vehicle Verification)
                 const qrData = JSON.stringify({
@@ -182,11 +206,21 @@ export default function MyBookings() {
                           <p className="text-[#C19A6B] text-xs mt-2">+ {booking.extended_time_mins} mins extended</p>
                         )}
                       </div>
+
+                      {/* Cancel Booking Button - Only shows if status is Active */}
+                      {booking.booking_status === 'Active' && (
+                        <button 
+                          onClick={() => handleCancel(booking.slot_id)}
+                          className="mt-5 w-full bg-red-500/10 border border-red-500/30 hover:bg-red-500/30 text-red-400 text-xs py-2 uppercase tracking-widest transition-colors font-semibold"
+                        >
+                          Cancel Booking
+                        </button>
+                      )}
                     </div>
 
                     {/* Right: QR Code */}
                     <div className="mt-6 md:mt-0 md:pl-6 md:border-l border-[#2A2724] flex flex-col items-center justify-center">
-                      <div className="bg-white p-2 rounded-sm shadow-md">
+                      <div className="bg-white p-2 rounded-sm shadow-md opacity-90 group-hover:opacity-100 transition-opacity">
                         <QRCode value={qrData} size={90} level="H" />
                       </div>
                       <p className="text-[10px] text-[#8B8682] tracking-widest uppercase mt-3">Scan to Verify</p>

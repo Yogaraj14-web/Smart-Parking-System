@@ -10,7 +10,7 @@ import random
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 from flask_socketio import SocketIO
-from datetime import datetime, timedelta  # 🔥 PUTHUSU: Timer-kaaga idhai add pannunga
+from datetime import datetime, timedelta 
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,7 +19,7 @@ app = Flask(__name__)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 🔥 PUTHUSU: Scheduler-a top-la start pandrom
+# 🔥 Scheduler-a top-la start pandrom
 scheduler = BackgroundScheduler()
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
@@ -61,7 +61,6 @@ def auto_clear_expired_bookings():
         conn.commit()
         if expired_bookings:
             print(f"🔥 Auto-cleared {len(expired_bookings)} expired bookings!")
-            # 🔥 Trigger live update for background expiration
             socketio.emit('live_update', {'message': 'Expired bookings cleared!'})
             
     except Exception as e:
@@ -141,7 +140,6 @@ def book_slot():
         cursor.execute("INSERT INTO Bookings (user_id, slot_id, booking_status) VALUES (%s, %s, 'Active')", (user_id, slot_id))
         conn.commit()
 
-        # 🔥 Trigger live update for new booking
         socketio.emit('live_update', {'message': 'New slot booked!'})
 
         return jsonify({"status": "success", "message": f"Slot successfully booked!"}), 200
@@ -210,7 +208,6 @@ def update_sensor():
 
         cursor.execute("UPDATE Parking_Slots SET sensor_status = %s WHERE slot_id = %s", (sensor_status, slot_id))
         
-        
 # --- THE MAGIC LOGIC: Auto-Checkout vs Unauthorized Alert vs Parked Status ---
         
         # Case A: Unauthorized Parking
@@ -223,17 +220,15 @@ def update_sensor():
             cursor.execute("UPDATE Bookings SET booking_status = 'Parked' WHERE slot_id = %s AND booking_status = 'Active'", (slot_id,))
             print(f"🚗 Car Parked at {slot_name}! Status updated to 'Parked'.")
 
-        # Case C: Smart Auto-Checkout with 5-MINUTE GRACE PERIOD
+        # Case C: Smart Auto-Checkout with 30-MINUTE GRACE PERIOD
         elif old_sensor_status == 1 and sensor_status == 0 and (db_status == 'Booked' or db_status == 'Parked'):
-            print(f"⚠️ Car left {slot_name}. Starting 5-minute grace period timer...")
+            print(f"⚠️ Car left {slot_name}. Starting 30-minute grace period timer...")
             
-            # 5 nimisham kazhichu run aaga vendiya background function
             def delayed_checkout(chk_slot_id, chk_slot_name):
                 conn_del = get_db_connection()
                 if not conn_del: return
                 cur_del = conn_del.cursor(dictionary=True)
                 try:
-                    # 5 mins kazhichum sensor innum 0-la thaan irukka nu check pandrom
                     cur_del.execute("SELECT sensor_status, db_status FROM Parking_Slots WHERE slot_id = %s", (chk_slot_id,))
                     current = cur_del.fetchone()
                     
@@ -241,7 +236,7 @@ def update_sensor():
                         cur_del.execute("UPDATE Bookings SET booking_status = 'Completed' WHERE slot_id = %s AND booking_status IN ('Active', 'Parked')", (chk_slot_id,))
                         cur_del.execute("UPDATE Parking_Slots SET db_status = 'Available' WHERE slot_id = %s", (chk_slot_id,))
                         conn_del.commit()
-                        print(f"✅ 5-Min Auto-Checkout Complete for {chk_slot_name}! Slot is now Available.")
+                        print(f"✅ 30-Min Auto-Checkout Complete for {chk_slot_name}! Slot is now Available.")
                         socketio.emit('live_update', {'message': 'Delayed Auto-Checkout completed!'})
                     else:
                         print(f"❌ Checkout aborted for {chk_slot_name}. Car came back!")
@@ -251,8 +246,8 @@ def update_sensor():
                     cur_del.close()
                     conn_del.close()
 
-            # Timer-a set pandrom (Testing-ku 'seconds=30' potu paarkalam, apparam 'minutes=5' maathikalam)
-            run_time = datetime.now() + timedelta(seconds=20) 
+            # 🔥 Timer-a 30 minutes-ku set panniyachu
+            run_time = datetime.now() + timedelta(minutes=30) 
             scheduler.add_job(func=delayed_checkout, trigger='date', run_date=run_time, args=[slot_id, slot_name])
 
         conn.commit()
@@ -292,6 +287,7 @@ def register_user():
     phone = data.get('phone_number')
     vehicle = data.get('vehicle_number')
     password = data.get('password')
+    profile_pic = data.get('profile_pic', 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png') # 🔥 Puthusu
 
     if not all([name, email, phone, vehicle, password]):
         return jsonify({"error": "All fields are required!"}), 400
@@ -308,9 +304,9 @@ def register_user():
 
         hashed_password = generate_password_hash(password)
         cursor.execute("""
-            INSERT INTO Users (name, email, phone_number, vehicle_number, password_hash) 
-            VALUES (%s, %s, %s, %s, %s)
-        """, (name, email, phone, vehicle, hashed_password))
+            INSERT INTO Users (name, email, phone_number, vehicle_number, password_hash, profile_pic) 
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (name, email, phone, vehicle, hashed_password, profile_pic)) # 🔥 profile_pic added
         
         conn.commit()
         return jsonify({"status": "success", "message": "User registered successfully!"}), 201
@@ -348,7 +344,8 @@ def login_user():
                     "user_id": user['user_id'],
                     "name": user['name'],
                     "email": user['email'],
-                    "role": user.get('role', 'user')
+                    "role": user.get('role', 'user'),
+                    "profile_pic": user.get('profile_pic', 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png') # 🔥 Puthusu
                 }
             }), 200
         else:
@@ -358,31 +355,6 @@ def login_user():
     finally:
         cursor.close()
         conn.close()
-
-# --- Helper Function: Send OTP via Email ---
-def send_otp_email(receiver_email, otp_code):
-    sender_email = os.getenv('EMAIL_USER')
-    sender_password = os.getenv('EMAIL_PASS')
-
-    if not sender_email or not sender_password:
-        print("Email credentials missing in .env")
-        return False
-
-    msg = EmailMessage()
-    msg.set_content(f"Hello VIP,\n\nYour Login OTP for Grand Cinemas Smart Parking is: {otp_code}\n\nThis code is valid for 5 minutes. Do not share it with anyone.")
-    msg['Subject'] = "Your VIP Parking Login OTP"
-    msg['From'] = sender_email
-    msg['To'] = receiver_email
-
-    try:
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        print(f"Error sending OTP email: {e}")
-        return False
 
 # --- API 8: Request OTP ---
 @app.route('/api/send-otp', methods=['POST'])
@@ -456,17 +428,17 @@ def verify_otp():
                     "user_id": user['user_id'],
                     "name": user['name'],
                     "email": user['email'],
-                    "role": user.get('role', 'user')
+                    "role": user.get('role', 'user'),
+                    "profile_pic": user.get('profile_pic', 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png') # 🔥 Puthusu
                 }
             }), 200
         else:
             return jsonify({"error": "Invalid OTP or OTP has expired."}), 401
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
-        conn.close()      
+        conn.close()
 
 # --- API 10: Get User's Bookings (UPDATED FOR DATE & QR) ---
 @app.route('/api/my-bookings/<int:user_id>', methods=['GET'])
@@ -476,7 +448,6 @@ def get_my_bookings(user_id):
         return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor(dictionary=True)
     try:
-        # Fetching booking date and vehicle number for QR and Filtering
         cursor.execute("""
             SELECT b.booking_id, b.slot_id, b.booking_status, b.extended_time_mins, 
                    DATE_FORMAT(b.booking_time, '%Y-%m-%d') as booking_date,
@@ -559,8 +530,7 @@ def clear_booking_history(user_id):
         return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
-        # Delete only old history, keep Active and Parked bookings safe
-        cursor.execute("DELETE FROM Bookings WHERE user_id = %s AND booking_status IN ('Completed', 'Expired')", (user_id,))
+        cursor.execute("DELETE FROM Bookings WHERE user_id = %s AND booking_status IN ('Completed', 'Expired', 'Cancelled')", (user_id,))
         conn.commit()
         
         socketio.emit('live_update', {'message': 'Booking history cleared!'})
@@ -580,7 +550,6 @@ def get_all_admin_bookings():
         return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor(dictionary=True)
     try:
-        # Ellaa users-oda data-vayum edukkuroam
         cursor.execute("""
             SELECT b.booking_id, b.slot_id, b.booking_status, b.extended_time_mins, 
                    DATE_FORMAT(b.booking_time, '%Y-%m-%d') as booking_date,
@@ -607,8 +576,7 @@ def clear_all_admin_history():
         return jsonify({"error": "Database connection failed"}), 500
     cursor = conn.cursor()
     try:
-        # Delete ONLY old history system-wide (keep Active and Parked safe)
-        cursor.execute("DELETE FROM Bookings WHERE booking_status IN ('Completed', 'Expired')")
+        cursor.execute("DELETE FROM Bookings WHERE booking_status IN ('Completed', 'Expired', 'Cancelled')")
         conn.commit()
         
         socketio.emit('live_update', {'message': 'Global history cleared by admin!'})
@@ -635,7 +603,6 @@ def verify_qr():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # DB-la indha ticket innum Active alladhu Parked-la irukka nu check pandrom
         cursor.execute("""
             SELECT b.booking_id, b.booking_status, p.slot_name, u.vehicle_number, u.name as user_name 
             FROM Bookings b
@@ -648,14 +615,13 @@ def verify_qr():
         if not booking:
             return jsonify({"status": "error", "message": "❌ FAKE TICKET! No record found."}), 404
 
-        if booking['booking_status'] == 'Completed' or booking['booking_status'] == 'Expired':
+        if booking['booking_status'] in ['Completed', 'Expired', 'Cancelled']:
             return jsonify({
                 "status": "error", 
-                "message": f"❌ EXPIRED! Ticket is already {booking['booking_status']}.",
+                "message": f"❌ INVALID! Ticket is already {booking['booking_status']}.",
                 "data": booking
             }), 400
 
-        # Success - Ticket is valid
         return jsonify({
             "status": "success", 
             "message": "✅ VALID VIP TICKET",
@@ -667,11 +633,68 @@ def verify_qr():
     finally:
         cursor.close()
         conn.close()
+
+#-----API 16 - CANCEL BOOKING 🔥 (Fix Panniyachu)
+@app.route('/api/cancel-booking', methods=['POST'])
+def cancel_booking():
+    data = request.json
+    slot_id = data.get('slot_id')
+    user_id = data.get('user_id')
+    
+    if not slot_id or not user_id:
+        return jsonify({"error": "slot_id and user_id are required"}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    cursor = conn.cursor()
+    
+    try:
+        # Slot-a Available aaku
+        cursor.execute("UPDATE Parking_Slots SET db_status = 'Available' WHERE slot_id = %s", (slot_id,))
+        # Booking-a Cancel aaku
+        cursor.execute("UPDATE Bookings SET booking_status = 'Cancelled' WHERE slot_id = %s AND user_id = %s AND booking_status = 'Active'", (slot_id, user_id))
+        conn.commit()
+        
+        # UI-ku live update anuppu
+        socketio.emit('live_update', {'message': 'Booking Cancelled!'})
+        return jsonify({"status": "success", "message": "Booking cancelled successfully"}), 200
+        
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- API 17: Update Profile Picture ---
+@app.route('/api/update-profile-pic', methods=['POST'])
+def update_profile_pic():
+    data = request.json
+    user_id = data.get('user_id')
+    profile_pic = data.get('profile_pic')
+
+    if not user_id or not profile_pic:
+        return jsonify({"error": "user_id and profile_pic are required"}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("UPDATE Users SET profile_pic = %s WHERE user_id = %s", (profile_pic, user_id))
+        conn.commit()
+        return jsonify({"status": "success", "message": "Profile picture updated successfully!"}), 200
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()        
                     
 # --- Start the Server with Background Scheduler ---
 if __name__ == '__main__':
-    # (Note: scheduler top-la already start aagiduchu, so inga add_job mattum panna podhum)
-    
     # Add the 1-minute expiration cleaner job
     scheduler.add_job(func=auto_clear_expired_bookings, trigger="interval", minutes=1)
     

@@ -1,32 +1,36 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'; 
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { io } from 'socket.io-client'; 
 
 export default function Home() {
   const router = useRouter();
   
-  // App States
   const [slots, setSlots] = useState([]);
   const [user, setUser] = useState(null);
   const [myActiveBookings, setMyActiveBookings] = useState([]);
 
-  // Payment Modal States
   const [showPayment, setShowPayment] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('card');
   const [paymentType, setPaymentType] = useState('book'); 
-  const [targetBookingId, setTargetBookingId] = useState(null);
+  
+  const [isUpdatingPic, setIsUpdatingPic] = useState(false); 
+  const [showPhotoMenu, setShowPhotoMenu] = useState(false); // 🔥 Dropdown Menu State
+  const fileInputRef = useRef(null); 
 
-  // Load Slots & User Bookings
   const loadData = async () => {
     try {
       const res = await fetch('http://127.0.0.1:5000/api/slots');
+      if (!res.ok) return; 
       const data = await res.json();
-      if (data.status === "success") setSlots(data.data);
+      if (data.status === "success") {
+        setSlots(data.data || []); 
+      }
     } catch (error) {
-      console.error("Error fetching slots:", error);
+      console.error("Error fetching slots (Server might be down):", error);
     }
 
     const savedUser = localStorage.getItem('user');
@@ -35,22 +39,37 @@ export default function Home() {
       setUser(parsedUser);
       try {
         const res = await fetch(`http://127.0.0.1:5000/api/my-bookings/${parsedUser.user_id}`);
+        if (!res.ok) return;
+
         const data = await res.json();
         if (data.status === "success") {
           const active = data.data.filter(b => b.booking_status === 'Active' || b.booking_status === 'Parked');
           setMyActiveBookings(active);
         }
       } catch (error) {
-        console.error("Error fetching user bookings:", error);
+        console.error("Backend connection failed:", error);
       }
     }
   };
 
   useEffect(() => {
     loadData();
+    
+    const socket = io('http://127.0.0.1:5000', {
+      transports: ['websocket', 'polling']
+    });
+    
+    socket.on('live_update', (data) => {
+      loadData(); 
+    });
+
     const handleRefresh = () => loadData();
     window.addEventListener('refresh_parking_data', handleRefresh);
-    return () => window.removeEventListener('refresh_parking_data', handleRefresh);
+    
+    return () => {
+      socket.disconnect();
+      window.removeEventListener('refresh_parking_data', handleRefresh);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -59,42 +78,78 @@ export default function Home() {
     router.push('/login');
   };
 
-  // --- BUTTON ACTIONS --- //
-  const handleBookClick = (slot) => {
-    if (!user) {
-      alert("Please login first to book a slot!");
-      router.push('/login');
-      return;
-    }
-    setSelectedSlot(slot);
-    setPaymentType('book');
-    setShowPayment(true);
+  // 🔥 Upload Profile Pic
+  const handleProfilePicUpdate = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result;
+      setIsUpdatingPic(true);
+      setShowPhotoMenu(false); // Close menu
+
+      try {
+        const res = await fetch('http://127.0.0.1:5000/api/update-profile-pic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: user.user_id, profile_pic: base64String })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          const updatedUser = { ...user, profile_pic: base64String };
+          setUser(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser)); 
+        } else {
+          alert("❌ Error: " + data.error);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsUpdatingPic(false);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleExtendClick = (booking_id, slot) => {
-    setSelectedSlot(slot);
-    setTargetBookingId(booking_id);
-    setPaymentType('extend');
-    setShowPayment(true);
-  };
+  // 🔥 Remove Profile Pic
+  const handleRemoveProfilePic = async () => {
+    const defaultPic = "https://cdn-icons-png.flaticon.com/512/3135/3135715.png";
+    setIsUpdatingPic(true);
+    setShowPhotoMenu(false); // Close menu
 
-  const handleDispute = async (booking_id) => {
-    if (!confirm("Is another car parked in your slot? Click OK to alert security and get a new slot.")) return;
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/bookings/dispute', {
+      const res = await fetch('http://127.0.0.1:5000/api/update-profile-pic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ booking_id: booking_id })
+        body: JSON.stringify({ user_id: user.user_id, profile_pic: defaultPic })
       });
-      const data = await res.json();
-      if (data.status === 'success') {
-        alert("✅ " + data.message);
-        loadData();
-      } else {
-        alert("❌ Error: " + data.message);
+
+      if (res.ok) {
+        const updatedUser = { ...user, profile_pic: defaultPic };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser)); 
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setIsUpdatingPic(false);
+    }
+  };
+
+  const handleSlotAction = (slot, myBooking) => {
+    if (slot.db_status === 'Available') {
+      if (!user) {
+        alert("Please login first to book a slot!");
+        router.push('/login');
+        return;
+      }
+      setSelectedSlot(slot);
+      setPaymentType('book');
+      setShowPayment(true);
+    } else if (myBooking) {
+      router.push('/my-bookings');
     }
   };
 
@@ -113,15 +168,6 @@ export default function Home() {
           const data = await response.json();
           if (data.status === 'success') loadData();
           else alert("❌ Error: " + data.error);
-        } else if (paymentType === 'extend') {
-          const response = await fetch('http://127.0.0.1:5000/api/extend-time', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ booking_id: targetBookingId, extra_mins: 30 })
-          });
-          const data = await response.json();
-          if (data.status === 'success') loadData();
-          else alert("❌ Error: " + data.error);
         }
       } catch (err) {
         console.error(err);
@@ -129,7 +175,6 @@ export default function Home() {
         setIsProcessing(false);
         setShowPayment(false);
         setSelectedSlot(null);
-        setTargetBookingId(null);
       }
     }, 2000);
   };
@@ -143,22 +188,76 @@ export default function Home() {
           <h1 className="text-4xl font-light tracking-[0.1em] uppercase">
             VIP <span className="font-serif italic text-[#C19A6B]">Parking</span>
           </h1>
-          <div className="flex gap-6 text-sm font-bold uppercase tracking-widest">
-            {user && <button onClick={() => router.push('/my-bookings')} className="text-[#8B8682] hover:text-[#C19A6B] transition-colors">My Bookings</button>}
-            {user?.role === 'admin' && <button onClick={() => router.push('/admin')} className="text-[#9E6B6B] hover:text-red-400 transition-colors">Admin Panel</button>}
-            {user ? <button onClick={handleLogout} className="text-[#8B8682] hover:text-[#E8E5E1]">Logout</button> : <button onClick={() => router.push('/login')} className="text-[#C19A6B]">Login</button>}
+          <div className="flex flex-wrap items-center justify-center gap-6 text-sm font-bold uppercase tracking-widest relative">
+            {user ? (
+              <>
+                {/* 🔥 Dropdown Container */}
+                <div className="relative">
+                  <div 
+                    onClick={() => setShowPhotoMenu(!showPhotoMenu)} 
+                    title="Change Profile Picture"
+                    className="flex items-center gap-3 bg-[#1a1917] px-3 py-1.5 rounded-full border border-[#2A2724] cursor-pointer hover:border-[#C19A6B] hover:shadow-[0_0_10px_rgba(193,154,107,0.2)] transition-all group"
+                  >
+                      <img 
+                          src={user.profile_pic || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"} 
+                          alt="Profile" 
+                          className={`w-7 h-7 rounded-full border border-[#C19A6B] object-cover group-hover:opacity-70 transition-opacity ${isUpdatingPic ? 'animate-pulse opacity-50' : ''}`}
+                      />
+                      <span className="text-[#E8E5E1] text-xs">{isUpdatingPic ? "Updating..." : user.name}</span>
+                  </div>
+
+                  {/* 🔥 Dropdown Menu Options */}
+                  {showPhotoMenu && (
+                    <div className="absolute top-12 left-0 z-50 bg-[#1a1917] border border-[#C19A6B]/50 shadow-xl rounded-md overflow-hidden flex flex-col w-40 animate-[fadeIn_0.2s_ease-out]">
+                      <button 
+                        onClick={() => fileInputRef.current.click()}
+                        className="text-xs text-[#E8E5E1] hover:bg-[#C19A6B]/20 hover:text-[#C19A6B] py-3 px-4 text-left font-bold uppercase tracking-widest transition-colors border-b border-[#2A2724]"
+                      >
+                        Upload Photo
+                      </button>
+                      <button 
+                        onClick={handleRemoveProfilePic}
+                        className="text-xs text-[#9E6B6B] hover:bg-[#9E6B6B]/20 hover:text-red-400 py-3 px-4 text-left font-bold uppercase tracking-widest transition-colors"
+                      >
+                        Remove Photo
+                      </button>
+                    </div>
+                  )}
+
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    ref={fileInputRef} 
+                    onChange={handleProfilePicUpdate} 
+                    className="hidden" 
+                  />
+                </div>
+                
+                <button onClick={() => router.push('/my-bookings')} className="text-[#8B8682] hover:text-[#C19A6B] transition-colors">My Bookings</button>
+                {user.role === 'admin' && <button onClick={() => router.push('/admin')} className="text-[#9E6B6B] hover:text-red-400 transition-colors">Admin Panel</button>}
+                <button onClick={handleLogout} className="text-[#8B8682] hover:text-[#E8E5E1]">Logout</button>
+              </>
+            ) : (
+              <button onClick={() => router.push('/login')} className="text-[#C19A6B]">Login</button>
+            )}
           </div>
         </nav>
 
         {/* Parking Slots Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {slots.map((slot) => {
-            // 🔥 FIXED LOGIC: Safe String Comparison to ensure buttons show up
-            const myBooking = myActiveBookings.find(b => String(b.slot_id) === String(slot.slot_id));
+          {slots?.map((slot) => { 
+            const myBooking = myActiveBookings?.find(b => String(b.slot_id) === String(slot.slot_id));
+            const isClickable = slot.db_status === 'Available' || myBooking;
 
             return (
-              <div key={slot.slot_id} className="bg-[#1a1917] border border-[#2A2724] p-8 flex flex-col items-center shadow-lg hover:border-[#C19A6B]/30 transition-colors">
-                <h2 className="text-5xl font-serif mb-6 text-[#E8E5E1]">{slot.slot_name}</h2>
+              <div 
+                key={slot.slot_id} 
+                onClick={() => handleSlotAction(slot, myBooking)}
+                className={`bg-[#1a1917] border border-[#2A2724] p-8 flex flex-col items-center transition-all group ${
+                  isClickable ? 'cursor-pointer hover:border-[#C19A6B]/50 hover:shadow-[0_0_20px_rgba(193,154,107,0.15)]' : 'opacity-80'
+                }`}
+              >
+                <h2 className="text-5xl font-serif mb-6 text-[#E8E5E1] group-hover:text-[#C19A6B] transition-colors">{slot.slot_name}</h2>
                 
                 <span className={`px-6 py-2 text-sm font-bold uppercase tracking-widest border mb-8 ${
                   slot.db_status === 'Available' ? 'text-green-400 border-green-500/30 bg-green-500/10' : 
@@ -168,34 +267,19 @@ export default function Home() {
                   {slot.db_status}
                 </span>
 
-                {/* THE BUTTON LOGIC - BIGGER & BETTER */}
                 <div className="w-full mt-auto">
                   {slot.db_status === 'Available' ? (
-                    <button 
-                      onClick={() => handleBookClick(slot)} 
-                      className="w-full bg-[#C19A6B] text-[#141311] font-bold uppercase tracking-widest py-4 text-sm hover:bg-[#E8E5E1] transition-colors"
-                    >
+                    <div className="w-full bg-[#C19A6B] text-[#141311] font-bold uppercase tracking-widest py-4 text-sm text-center group-hover:bg-[#E8E5E1] transition-colors">
                       Book Slot (₹50)
-                    </button>
+                    </div>
                   ) : myBooking ? (
-                    <div className="flex w-full gap-4">
-                      <button 
-                        onClick={() => handleExtendClick(myBooking.booking_id, slot)}
-                        className="flex-1 bg-transparent border-2 border-blue-400 text-blue-400 font-bold uppercase tracking-wider py-3 text-xs hover:bg-blue-400 hover:text-[#141311] transition-colors"
-                      >
-                        Extend (+30m)
-                      </button>
-                      <button 
-                        onClick={() => handleDispute(myBooking.booking_id)}
-                        className="flex-1 bg-transparent border-2 border-red-500 text-red-500 font-bold uppercase tracking-wider py-3 text-xs hover:bg-red-500 hover:text-[#141311] transition-colors"
-                      >
-                        Dispute
-                      </button>
+                    <div className="w-full bg-transparent border-2 border-blue-400 text-blue-400 font-bold uppercase tracking-wider py-4 text-sm text-center group-hover:bg-blue-400 group-hover:text-[#141311] transition-colors">
+                      Manage Booking ➡️
                     </div>
                   ) : (
-                    <button disabled className="w-full bg-[#2A2724] text-[#8B8682] cursor-not-allowed font-bold uppercase tracking-widest py-4 text-sm">
+                    <div className="w-full bg-[#2A2724] text-[#8B8682] font-bold uppercase tracking-widest py-4 text-sm text-center">
                       Taken
-                    </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -203,7 +287,7 @@ export default function Home() {
           })}
         </div>
 
-        {/* PAYMENT MODAL (Bigger Layout) */}
+        {/* PAYMENT MODAL */}
         <AnimatePresence>
           {showPayment && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -216,8 +300,8 @@ export default function Home() {
                 </p>
 
                 <div className="flex gap-4 mb-8">
-                  <button onClick={() => setPaymentMethod('card')} className={`flex-1 py-3 text-sm uppercase font-bold tracking-widest border-2 ${paymentMethod === 'card' ? 'bg-[#C19A6B]/20 text-[#C19A6B] border-[#C19A6B]' : 'bg-[#141311] text-[#8B8682] border-[#2A2724]'}`}>Card</button>
-                  <button onClick={() => setPaymentMethod('upi')} className={`flex-1 py-3 text-sm uppercase font-bold tracking-widest border-2 ${paymentMethod === 'upi' ? 'bg-[#C19A6B]/20 text-[#C19A6B] border-[#C19A6B]' : 'bg-[#141311] text-[#8B8682] border-[#2A2724]'}`}>UPI</button>
+                  <button type="button" onClick={() => setPaymentMethod('card')} className={`flex-1 py-3 text-sm uppercase font-bold tracking-widest border-2 ${paymentMethod === 'card' ? 'bg-[#C19A6B]/20 text-[#C19A6B] border-[#C19A6B]' : 'bg-[#141311] text-[#8B8682] border-[#2A2724]'}`}>Card</button>
+                  <button type="button" onClick={() => setPaymentMethod('upi')} className={`flex-1 py-3 text-sm uppercase font-bold tracking-widest border-2 ${paymentMethod === 'upi' ? 'bg-[#C19A6B]/20 text-[#C19A6B] border-[#C19A6B]' : 'bg-[#141311] text-[#8B8682] border-[#2A2724]'}`}>UPI</button>
                 </div>
 
                 <form onSubmit={handlePaymentSubmit}>

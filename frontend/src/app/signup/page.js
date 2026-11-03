@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 export default function SignUp() {
   const [formData, setFormData] = useState({
@@ -13,9 +13,26 @@ export default function SignUp() {
   const [message, setMessage] = useState('');
   const [isError, setIsError] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  
+  const [profilePic, setProfilePic] = useState(''); 
+  const [showPhotoMenu, setShowPhotoMenu] = useState(false); // 🔥 Menu kaaga puthu state
+  
+  const fileInputRef = useRef(null); 
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfilePic(reader.result); 
+        setShowPhotoMenu(false); // Photo select aana udane menu-va close pandrom
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -23,11 +40,14 @@ export default function SignUp() {
     setMessage('Registering VIP Member...');
     setIsError(false);
 
+    // 🔥 Default image logic: user photo select pannalana indha URL eduthukkum
+    const finalProfilePic = profilePic || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png";
+
     try {
       const response = await fetch('http://127.0.0.1:5000/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData, profile_pic: finalProfilePic }) 
       });
 
       const data = await response.json();
@@ -36,6 +56,7 @@ export default function SignUp() {
         setMessage('Registration Successful! You can now Login.');
         setIsError(false);
         setFormData({ name: '', email: '', phone_number: '', vehicle_number: '', password: '' });
+        setProfilePic('');
       } else {
         setMessage(data.error || 'Already registered! Please login.');
         setIsError(true);
@@ -54,20 +75,71 @@ export default function SignUp() {
         style={{ backgroundImage: "url('https://images.unsplash.com/photo-1485291571150-772bcfc10da5?q=80&w=2000&auto=format&fit=crop')" }}
       ></div>
 
-      <div className="relative z-10 w-full max-w-md bg-[#1E1C1A]/90 backdrop-blur-md border border-[#2A2724] p-8 md:p-10 shadow-2xl animate-[fadeIn_0.5s_ease-out]">
+      <div className="relative z-10 w-full max-w-md bg-[#1E1C1A]/90 backdrop-blur-md border border-[#2A2724] p-8 md:p-10 shadow-2xl animate-[fadeIn_0.5s_ease-out] mt-10 mb-10">
         
-        <div className="text-center mb-10">
+        <div className="text-center mb-8">
           <h2 className="text-[#C19A6B] font-semibold tracking-[0.3em] text-xs mb-2 uppercase">Grand Cinemas</h2>
           <h1 className="text-3xl font-light tracking-[0.1em] uppercase">VIP <span className="font-serif italic">Access</span></h1>
         </div>
 
-        {/* Added autoComplete="off" to the form */}
         <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
+          
+          {/* 🔥 Profile Picture Selection Area */}
+          <div className="flex flex-col items-center justify-center mb-6 relative">
+            <div 
+              onClick={() => setShowPhotoMenu(!showPhotoMenu)}
+              className="relative w-24 h-24 rounded-full border-2 border-[#C19A6B] overflow-hidden cursor-pointer group hover:shadow-[0_0_15px_rgba(193,154,107,0.5)] transition-all"
+            >
+              <img 
+                src={profilePic || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"} 
+                alt="Profile" 
+                className="w-full h-full object-cover group-hover:opacity-40 transition-opacity"
+              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-white text-[10px] font-bold uppercase tracking-widest">Edit</span>
+              </div>
+            </div>
+            <p className="text-[10px] tracking-widest text-[#8B8682] uppercase mt-3">Profile Photo</p>
+            
+            {/* 🔥 Dropdown Menu Options */}
+            {showPhotoMenu && (
+              <div className="absolute top-28 z-20 bg-[#1a1917] border border-[#C19A6B]/50 shadow-xl rounded-md overflow-hidden flex flex-col w-40 animate-[fadeIn_0.2s_ease-out]">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    fileInputRef.current.click();
+                    setShowPhotoMenu(false);
+                  }}
+                  className="text-xs text-[#E8E5E1] hover:bg-[#C19A6B]/20 hover:text-[#C19A6B] py-3 px-4 text-left font-bold uppercase tracking-widest transition-colors border-b border-[#2A2724]"
+                >
+                  Upload Photo
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setProfilePic(''); // Profile Pic-a remove pandrom
+                    setShowPhotoMenu(false);
+                  }}
+                  className="text-xs text-[#9E6B6B] hover:bg-[#9E6B6B]/20 hover:text-red-400 py-3 px-4 text-left font-bold uppercase tracking-widest transition-colors"
+                >
+                  Remove Photo
+                </button>
+              </div>
+            )}
+
+            <input 
+              type="file" 
+              accept="image/*" 
+              ref={fileInputRef} 
+              onChange={handleImageUpload} 
+              className="hidden" 
+            />
+          </div>
+
           <div>
             <label className="block text-[10px] tracking-widest text-[#8B8682] uppercase mb-2">Full Name</label>
             <input 
               type="text" name="name" required value={formData.name} onChange={handleChange}
-              autoComplete="off"
               className="w-full bg-[#141311] border border-[#2A2724] text-[#E8E5E1] p-3 text-sm focus:outline-none focus:border-[#C19A6B] transition-colors"
               placeholder="John Doe"
             />
@@ -77,7 +149,6 @@ export default function SignUp() {
             <label className="block text-[10px] tracking-widest text-[#8B8682] uppercase mb-2">Email</label>
             <input 
               type="email" name="email" required value={formData.email} onChange={handleChange}
-              autoComplete="off"
               className="w-full bg-[#141311] border border-[#2A2724] text-[#E8E5E1] p-3 text-sm focus:outline-none focus:border-[#C19A6B] transition-colors"
               placeholder="john@email.com"
             />
@@ -88,7 +159,6 @@ export default function SignUp() {
               <label className="block text-[10px] tracking-widest text-[#8B8682] uppercase mb-2">Phone</label>
               <input 
                 type="tel" name="phone_number" required value={formData.phone_number} onChange={handleChange}
-                autoComplete="off"
                 className="w-full bg-[#141311] border border-[#2A2724] text-[#E8E5E1] p-3 text-sm focus:outline-none focus:border-[#C19A6B] transition-colors"
                 placeholder="9876543210"
               />
@@ -97,7 +167,6 @@ export default function SignUp() {
               <label className="block text-[10px] tracking-widest text-[#8B8682] uppercase mb-2">Vehicle No.</label>
               <input 
                 type="text" name="vehicle_number" required value={formData.vehicle_number} onChange={handleChange}
-                autoComplete="off"
                 className="w-full bg-[#141311] border border-[#2A2724] text-[#E8E5E1] p-3 text-sm focus:outline-none focus:border-[#C19A6B] transition-colors uppercase"
                 placeholder="TN 01 AB 1234"
               />
@@ -110,7 +179,6 @@ export default function SignUp() {
               <input 
                 type={showPassword ? "text" : "password"} 
                 name="password" required value={formData.password} onChange={handleChange}
-                autoComplete="new-password" /* This stops browser from suggesting saved passwords */
                 className="w-full bg-[#141311] border border-[#2A2724] text-[#E8E5E1] p-3 pr-16 text-sm focus:outline-none focus:border-[#C19A6B] transition-colors"
                 placeholder="••••••••"
               />
