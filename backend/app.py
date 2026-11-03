@@ -694,10 +694,13 @@ def update_profile_pic():
         conn.close()        
                     
 # --- Start the Server with Background Scheduler ---
-# --- Start the Server with Background Scheduler ---
+
 if __name__ == '__main__':
     # Add the 1-minute expiration cleaner job
     scheduler.add_job(func=auto_clear_expired_bookings, trigger="interval", minutes=1)
     
-    # Start Flask Server (Render Fix)
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    # 🔥 FIX: Get Render's dynamic port, default to 5000 for local testing
+    port = int(os.environ.get('PORT', 5000))
+    
+    # Start Flask Server
+    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
